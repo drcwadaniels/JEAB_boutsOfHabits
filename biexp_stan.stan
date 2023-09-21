@@ -21,7 +21,9 @@ real L_mu;
 
 vector[Ns] short_rme;
 vector[Ns] long_rme;
-vector[Ns] L_rme; 
+vector[Ns] L_rme;
+
+; 
 
 
 

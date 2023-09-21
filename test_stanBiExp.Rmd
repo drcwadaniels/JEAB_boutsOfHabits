@@ -14,6 +14,9 @@ library(stats)
 library(shinystan)
 library(cmdstanr)
 
+#functions
+min_na <- function(x)min(x,na.rm=T)
+
 ```
 
 # 1. Temporal Bisection
@@ -29,16 +32,11 @@ data.path <- "D:\\Dropbox Drive Folder\\Dropbox\\2 All of Carter's Stuff\\Carter
 
 ```{r}
 
-#notes for translating trial-by-trial matrices:
-#cols:
-##1: trial-type; #2: LTI; #3: interval; #4: response; #5 choice latency/or retrieval latency?
-##1: 210: Nose-poke; 310: External
-##2: 210: animal generated; 310: programed at 2.5 s
-##3: interval
-##4: 140: short; 150: long
-##5: animal generated
 
 tbt_matrices <- readxl::read_excel(paste0(data.path,"testData_Romero_etal_paper.xlsx"))
+tau <- apply(tbt_matrices,2,min_na)
+tbt_matrices<-t(t(tbt_matrices) - tau)
+tbt_matrices<-as.data.frame(tbt_matrices[c(1:1000),])
 tbt_long <- pivot_longer(tbt_matrices,cols = c(Subj1:Subj11))
 colnames(tbt_long)<-c("SubjectID","IRT")
 tbt_long$SubjectID <-as.numeric(gsub("Subj","",tbt_long$SubjectID))
@@ -75,7 +73,9 @@ real L_mu;
 
 vector[Ns] short_rme;
 vector[Ns] long_rme;
-vector[Ns] L_rme; 
+vector[Ns] L_rme;
+
+; 
 
 
 
