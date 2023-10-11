@@ -1,0 +1,610 @@
+---
+title: "BERM Analysis Exp2 - Thrailkill & Daniels"
+author: "Carter Daniels"
+date: "2023-07-23"
+output: html_document
+---
+
+```{r}
+rm(list=ls())
+#import libraries
+library(tidyverse)
+library(lme4)
+library(stats)
+library(shinystan)
+library(cmdstanr)
+library(posterior)
+library(bayesplot)
+
+
+```
+
+# 1. Temporal Bisection
+
+
+```{r}
+
+#datapath and functions
+
+data.path <- "D:\\Dropbox Drive Folder\\Dropbox\\2 All of Carter's Stuff\\Carter Local\\JEAB_Habit_EricCollab\\Data\\"
+
+```
+
+```{r}
+
+#drop the last irt of each session for each animal
+
+tbt_matrices <- read.csv(paste0(data.path,"exp2_habit_jeab.csv"))[,c(1:9)]
+tbt_matrices <- tbt_matrices[tbt_matrices$analyze=="include",]
+tbt_matrices <- tbt_matrices[tbt_matrices$IRT!=0,]
+tbt_matrices <- tbt_matrices[tbt_matrices$response_n!=tbt_matrices$irt_n,]
+tbt_matrices$reCode_Condition <- 0
+tbt_matrices$reCode_Session <- 0
+
+tbt_matrices$reCode_Condition[tbt_matrices$Condition=="pfUnpaired"]<-1
+
+
+tbt_matrices$reCode_Subject <- tbt_matrices$subject
+i = 0
+#recode subject
+for (ea in unique(tbt_matrices$subject))
+{
+  i = i + 1
+  tbt_matrices$reCode_Subject[tbt_matrices$subject==ea]<-i
+}
+
+
+#center IRTs from each session
+min_collect <- NULL
+name_list <- NULL
+i = 0
+for (ea_subj in unique(tbt_matrices$reCode_Subject))
+{
+    i = i + 1
+    min_collect[i]<-min(tbt_matrices$IRT[which(tbt_matrices$reCode_Subject==ea_subj)])
+    name_list[i] <- paste0(ea_subj)
+    tbt_matrices$IRT[which(tbt_matrices$reCode_Subject==ea_subj)] <- tbt_matrices$IRT[which(tbt_matrices$reCode_Subject==ea_subj)] -
+      min(tbt_matrices$IRT[which(tbt_matrices$reCode_Subject==ea_subj)])
+}
+min_collect <- as.data.frame(min_collect)
+min_collect$reCode_Subject <- name_list
+
+#mark last IRT in session as censored
+tbt_matrices$reCode_censored <- 0
+for (ea_subj in unique(tbt_matrices$reCode_Subject))
+{
+    temp <- tbt_matrices$rnf_in_IRI[tbt_matrices$reCode_Subject==ea_subj]
+    temp[length(temp)]<-1
+    tbt_matrices$reCode_censored[tbt_matrices$reCode_Subject==ea_subj] <- temp
+    
+}
+tbt_matrices$cens_thresh <- 0
+tbt_matrices$cens_thresh[tbt_matrices$reCode_censored==1] <- tbt_matrices$IRT[tbt_matrices$reCode_censored==1]
+
+
+
+```
+
+```{r, fig.width = 24, fig.height = 24}
+
+ggplot() + 
+  geom_point(data=tbt_matrices, 
+             aes(x=StartTimeOfResponse,y=log(IRT),color=as.factor(reCode_Condition))) + 
+  facet_wrap(~reCode_Subject)
+
+
+
+```
+
+
+
+```{r}
+
+biexp_stan <- "
+
+// stan code for biexponential
+
+data {
+
+ int<lower=1> Nr; // number of data points
+ int<lower=1> Ns; // number of subjects
+ int<lower=1> Np; // number of predictors
+ vector<lower=0>[Nr] y; //irt stream
+ vector<lower=0>[Nr] cens_threshold; //threshold for censored data
+ int s[Nr]; //subject stream
+ int C[Nr]; //censor stream
+ matrix[Nr,Np] P; //predictor matrix
+
+
+}
+
+parameters {
+
+//parameters
+real beta_short_mu;
+real delta_long_mu; 
+real L_mu;
+
+vector[Np] betas_beta_short;
+vector[Np] betas_delta_long;
+vector[Np] betas_L; 
+
+vector[Ns] short_rme;
+vector[Ns] long_rme;
+vector[Ns] L_rme;
+
+
+
+
+}
+
+transformed parameters {
+vector[Nr] beta_short_temp;
+vector[Nr] delta_long_temp;
+vector[Nr] L_temp;
+
+vector<lower=0>[Nr] beta_short;
+vector<lower=0>[Nr] delta_long; 
+vector<lower=0>[Nr] beta_long;
+vector<lower=0>[Nr] L;
+vector<lower=0,upper=1>[Nr] Q; 
+
+
+
+for (i in 1:Nr)
+{
+  beta_short_temp[i] = short_rme[s[i]];
+  delta_long_temp[i] = long_rme[s[i]];
+  L_temp[i] = L_rme[s[i]]; 
+  
+  
+}
+
+  beta_short = exp(beta_short_mu+(P*betas_beta_short)+beta_short_temp); 
+  delta_long = exp(delta_long_mu+(P*betas_delta_long)+delta_long_temp);
+  L = exp(L_mu+(P*betas_L)+L_temp);
+  
+  beta_long = beta_short + delta_long; 
+  Q = L./(1+L);
+
+}
+
+model {
+
+//priors
+//mean
+target+= normal_lpdf(beta_short_mu|-1,3);
+target+= normal_lpdf(delta_long_mu|2.5,4);
+target+= normal_lpdf(L_mu|0,3);
+
+//betas
+target+= normal_lpdf(betas_beta_short|0,3);
+target+= normal_lpdf(betas_delta_long|0,3);
+target+= normal_lpdf(betas_L|0,3);
+
+
+//subject specific shift from mean
+target+= normal_lpdf(short_rme|0,2);
+target+= normal_lpdf(long_rme|0,2);
+target+= normal_lpdf(L_rme|0,2); 
+
+
+//likelihood
+
+for (i in 1:Nr)
+{
+  if (C[i]==0)
+  {
+    //biexponential for uncensored data
+    target+= log_sum_exp(log1m(Q[i])+exponential_lpdf(y[i]|1/beta_short[i]),log(Q[i])+exponential_lpdf(y[i]|1/beta_long[i])); 
+  }
+  else 
+  {
+    //biexponential for censored data
+    target+= log_sum_exp(log1m(Q[i])+exponential_lccdf(cens_threshold[i]|1/beta_short[i]),log(Q[i])+exponential_lccdf(cens_threshold[i]|1/beta_long[i]));
+  }
+
+}
+
+
+}
+
+"
+
+write_stan_file(biexp_stan,
+                dir=data.path,
+                basename="biexp_stan",
+                force_overwrite = TRUE)
+
+#compile model
+mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
+                                                "biexp_stan.stan")))
+
+
+```
+
+```{r}
+#construct predictor matrix
+pred_matrix <- model.matrix(IRT~-1+reCode_Condition,
+                             data=tbt_matrices)
+
+
+data_list <- list(Nr = nrow(tbt_matrices),
+                  Ns = length(unique(tbt_matrices$reCode_Subject)),
+                  Np = ncol(pred_matrix),
+                  cens_threshold=tbt_matrices$cens_thresh,
+                  y=tbt_matrices$IRT,
+                  s=tbt_matrices$reCode_Subject, 
+                  C = tbt_matrices$reCode_censored,
+                  P=pred_matrix)
+
+
+
+
+```
+
+
+```{r}
+
+## mcmc
+
+# fit <- mod$sample(data=data_list,
+#                   seed=123,
+#                   chains=4,
+#                   parallel_chains = 4,
+#                   refresh=100,
+#                   num_samples=10000,
+#                   num_warmup=10000,
+#                   adapt_delta=0.99,
+#                   max_treedepth=30,
+#                   output_dir="D:/Dropbox Drive Folder/Dropbox/2 All of Carter's Stuff/Carter Local/JEAB_Habit_EricCollab/Data/Exp2_Fit")
+# a <- fit$summary()
+
+# fit <- mod$optimize(data=data_list)
+# a <- fit$summary()
+# colnames(a)<-c("variable","mean")
+
+# fit <- mod$variational(data=data_list)
+
+# a <- fit$summary()
+
+load(paste0(data.path,"Exp2_Fit\\Exp2.RData"))
+
+
+```
+
+```{r}
+
+fixed_effects <- a[c(2:7),c("variable","mean")]
+random_effects <- a[c(8:55),c("variable","mean")]
+
+#altapproach
+#short biexp
+predictions <- as.data.frame(pred_matrix)
+predictions$reCode_Subject <- tbt_matrices$reCode_Subject
+predictions$short_mu <- as.numeric(as.vector(fixed_effects[1,"mean"]))
+predictions$short_beta_session <- 0
+predictions$short_beta_session[predictions$reCode_Session==1] <- as.numeric(as.vector(fixed_effects[4,"mean"]))
+
+#add rme
+predictions$short_rme <- 0
+for (ea_subj in unique(predictions$reCode_Subject))
+{
+  predictions$short_rme[predictions$reCode_Subject==ea_subj] <- as.numeric(random_effects$mean[random_effects$variable==paste0("short_rme[",as.character(ea_subj),"]")])
+}
+
+predictions$total_short <- rowSums(predictions[,3:5])
+predictions$exp_total_short <- exp(predictions$total_short)
+
+#longbiexp
+predictions$long_mu <- as.numeric(as.vector(fixed_effects[2,"mean"]))
+predictions$long_beta_session <- 0
+predictions$long_beta_session[predictions$reCode_Session==1] <- as.numeric(as.vector(fixed_effects[5,"mean"]))
+
+#add rme
+predictions$long_rme <- 0
+for (ea_subj in unique(predictions$reCode_Subject))
+{
+  predictions$long_rme[predictions$reCode_Subject==ea_subj] <- as.numeric(random_effects$mean[random_effects$variable==paste0("long_rme[",as.character(ea_subj),"]")])
+}
+
+predictions$total_long <- rowSums(predictions[,8:10])
+predictions$exp_total_long <- exp(predictions$total_long) + predictions$exp_total_short
+
+##q of biexp
+predictions$L_mu <- as.numeric(as.vector(fixed_effects[3,"mean"]))
+predictions$L_beta_session <- 0
+predictions$L_beta_session[predictions$reCode_Session==1] <- as.numeric(as.vector(fixed_effects[6,"mean"]))
+
+#add rme
+predictions$L_rme <- 0
+for (ea_subj in unique(predictions$reCode_Subject))
+{
+  predictions$L_rme[predictions$reCode_Subject==ea_subj] <- as.numeric(random_effects$mean[random_effects$variable==paste0("L_rme[",as.character(ea_subj),"]")])
+}
+
+predictions$total_L <- rowSums(predictions[,13:15])
+predictions$exp_total_L <- exp(predictions$total_L) / (1+exp(predictions$total_L))
+
+meta_params <- unique(predictions[,c("reCode_Subject","reCode_Condition","exp_total_short","exp_total_long","exp_total_L")])
+
+tbt_matrices_wfit <- merge(tbt_matrices,meta_params,by=c("reCode_Subject","reCode_Condition"))
+
+```
+
+```{r}
+
+quantil_df <- as.data.frame(seq(0,1,0.025))
+colnames(quantil_df)<-"quantiles"
+quantil_df$quantiles <- 1-quantil_df$quantiles
+ i = 0
+ col_list<-NULL
+for (ea_subj in unique(tbt_matrices$reCode_Subject))
+{
+  for (ea_sess in unique(tbt_matrices$reCode_Session))
+  {
+    i = i + 1
+    grp <- unique(tbt_matrices$reCode_Condition[tbt_matrices$reCode_Subject==ea_subj])
+    quantil_df[,ncol(quantil_df)+1] <- quantile(tbt_matrices$IRT[which(tbt_matrices$reCode_Subject==ea_subj & tbt_matrices$reCode_Session==ea_sess)],probs=seq(0,1,0.025))
+    col_list[i] <- paste0(grp,"_",ea_subj,"_",ea_sess)
+  }
+}
+
+colnames(quantil_df)[2:ncol(quantil_df)] <-col_list
+long_quantil_df <- pivot_longer(quantil_df,cols=c(2:ncol(quantil_df)))
+colnames(long_quantil_df)<-c("quantiles","grp_subj_sess","IRT")
+exp_ids <-t(array(unlist(str_split(long_quantil_df$grp_subj_sess,"_")),dim=c(3,nrow(long_quantil_df))))
+long_quantil_df$reCode_Subject <- exp_ids[,2]
+long_quantil_df$reCode_Condition <- exp_ids[,1]
+long_quantil_df$reCode_Session <- exp_ids[,3]
+
+
+
+#add fits
+long_quantil_df$biexp_fit<-0
+for (ea_subj in unique(tbt_matrices$reCode_Subject))
+{
+    q <- meta_params$exp_total_L[which(meta_params$reCode_Subject==ea_subj)]
+    short <- meta_params$exp_total_short[which(meta_params$reCode_Subject==ea_subj)]
+    long <- meta_params$exp_total_long[which(meta_params$reCode_Subject==ea_subj)]
+    temp_irts <- long_quantil_df$IRT[which(long_quantil_df$reCode_Subject==ea_subj)]
+    long_quantil_df$biexp_fit[which(long_quantil_df$reCode_Subject==ea_subj)] <- 1-(((1-q)*pexp(temp_irts,1/short)) + (q*pexp(temp_irts,1/long)))
+
+}
+
+summary_mean <- long_quantil_df %>% group_by(reCode_Condition,reCode_Session,quantiles) %>% summarise(across(.cols=c(IRT,biexp_fit),.fns=c(mean,sd)))
+colnames(summary_mean)[4:ncol(summary_mean)]<-c("IRT_mean","IRT_sd","Mean_Fit","SD_Fit")
+
+```
+
+
+```{r, fig.width = 24, fig.height = 24}
+
+ggplot() + 
+  geom_point(data=tbt_matrices_wfit, 
+             aes(x=StartTimeOfResponse,y=log(IRT),color=as.factor(reCode_Condition))) + 
+  geom_line(data=tbt_matrices_wfit, 
+            aes(x=StartTimeOfResponse,y=log(exp_total_short),color=as.factor(reCode_Condition)),size=1.5,linetype="solid")+
+  geom_line(data=tbt_matrices_wfit, 
+            aes(x=StartTimeOfResponse,y=log(exp_total_long),color=as.factor(reCode_Condition)),size=1.5,linetype="dashed")+
+  facet_wrap(~reCode_Subject+reCode_Session)
+
+
+
+```
+
+```{r, fig.width = 24, fig.height = 24}
+
+ggplot() + 
+  geom_point(data=long_quantil_df, 
+             aes(x=log10(IRT),y=log10(quantiles),color=as.factor(reCode_Condition))) + 
+    geom_line(data=long_quantil_df, 
+            aes(x=log10(IRT),y=log10(biexp_fit),color=as.factor(reCode_Condition)),size=1)+
+  facet_wrap(~reCode_Subject+reCode_Session, scales="free")
+
+ggplot() + 
+  geom_point(data=long_quantil_df, 
+             aes(x=IRT,y=log10(quantiles),color=as.factor(reCode_Condition))) + 
+  geom_line(data=long_quantil_df, 
+            aes(x=IRT,y=log10(biexp_fit),color=as.factor(reCode_Condition)),size=1)+
+  xlim(0,30)+
+  facet_wrap(~reCode_Subject+reCode_Session,scales="free")
+
+
+
+```
+
+```{r}
+
+
+ggplot() + 
+  geom_point(data=summary_mean, 
+             aes(x=IRT_mean,y=log10(quantiles),color=as.factor(reCode_Condition))) + 
+  geom_line(data=summary_mean, 
+            aes(x=IRT_mean,y=log10(Mean_Fit),group=as.factor(reCode_Condition),color=as.factor(reCode_Condition)),size=1)+
+  xlim(0,30) + 
+  ylim(-1, 0) + 
+  ylab("Log Probability IRT > t") + 
+  xlab("Elapsed time, t (s)") + 
+  ggtitle("Mean BERM Fit") 
+
+#write.csv(summary_mean, file = paste0(data.path,"Exp2_logsurvivordata.csv"))
+
+
+```
+
+```{r}
+
+mcmc_draws <- fit$draws(variables=c("beta_short_mu","delta_long_mu","L_mu",
+                                    "betas_beta_short[1]", 
+                                    "betas_delta_long[1]",
+                                    "betas_L[1]"), 
+                        format = "matrix")
+
+
+#session difference in unpaired
+plot_title <- ggtitle("Posterior Distributions of Difference Between Tests Habit & Pre-Feeding") 
+mcmc_areas(mcmc_draws, pars=c("betas_beta_short[1]", "betas_delta_long[1]", 
+                               "betas_L[1]"), 
+           point_est = "mean", 
+           prob=0.68, 
+           prob_outer = 0.95) + plot_title + vline_0() + 
+  scale_y_discrete(labels=c("betas_beta_short[1]"="w", 
+                            "betas_delta_long[1]"="b",
+                            "betas_L[1]" = "L")) + 
+  xlab("Differences on Log Scale") + 
+  ylab("BERM Parameter")
+
+
+#posteriors for bout length and bout duration
+
+
+bout_lengthHab <- 1/(exp(mcmc_draws[,3])/(exp(mcmc_draws[,3])+1))
+bout_lengthPF <- 1/(exp(mcmc_draws[,3]+mcmc_draws[,6])/(exp(mcmc_draws[,3]+mcmc_draws[,6])+1))
+bout_length_diff <- log(bout_lengthPF+1) - log(bout_lengthHab+1)
+
+bout_durationHab <- bout_lengthHab * (1/(exp(mcmc_draws[,1])))
+bout_durationPF <- bout_lengthPF * (1/(exp(mcmc_draws[,1]+mcmc_draws[,4])))
+bout_duration_diff <- log(bout_durationPF+1)- log(bout_durationHab-1)
+
+calc_posteriors <- as.data.frame(cbind(bout_lengthHab, bout_lengthPF, bout_length_diff, bout_durationHab, bout_durationPF, bout_duration_diff))
+colnames(calc_posteriors)<-c("Bout_LengthHab", "Bout_LengthPF", "Bout_LengthDiff", "Bout_DurationHab","Bout_DurationPF","Bout_DurationDiff")
+
+# ggplot() + 
+#   geom_density(data=calc_posteriors, aes(Bout_LengthHab), color = "blue", fill = "blue", alpha  = 0.5) + 
+#   geom_density(data=calc_posteriors, aes(Bout_LengthPF), color = "orange", fill = "orange", alpha = 0.5) + 
+#   xlim(0,10) + 
+#   ggtitle("Bout Length")
+
+ggplot() + 
+  geom_density(data=calc_posteriors, aes(bout_length_diff), color = "blue", fill = "blue", alpha  = 0.5) + 
+  geom_vline(data=calc_posteriors, aes(xintercept = 0 ))+
+  xlim(-2.5,2.5) + 
+  ggtitle("Bout Length PF - Hab")
+
+# ggplot() + 
+#   geom_density(data=calc_posteriors, aes(Bout_DurationHab), color = "blue", fill = "blue", alpha  = 0.5) + 
+#   geom_density(data=calc_posteriors, aes(Bout_DurationPF), color = "orange", fill = "orange", alpha = 0.5) + 
+#   xlim(0,30) + 
+#   ggtitle("Bout Duration")
+
+ggplot() + 
+  geom_density(data=calc_posteriors, aes(Bout_DurationDiff), color = "blue", fill = "blue", alpha  = 0.5) + 
+  geom_vline(data=calc_posteriors, aes(xintercept = 0 ))+
+  xlim(-5,5) + 
+  ggtitle("Bout Duration PF - Hab")
+
+```
+
+
+```{r}
+
+
+#estimates on the linear scale
+meta_params_wminIRT <- merge(meta_params,
+                             min_collect[,c("reCode_Subject","min_collect")],
+                             by=c("reCode_Subject"))
+meta_params_wminIRT$exp_total_short <- meta_params_wminIRT$exp_total_short + meta_params_wminIRT$min_collect
+meta_params_wminIRT$exp_total_long <- meta_params_wminIRT$exp_total_long + meta_params_wminIRT$min_collect
+meta_params_wminIRT$b <- 1/meta_params_wminIRT$exp_total_long
+meta_params_wminIRT$w <- 1/meta_params_wminIRT$exp_total_short
+meta_params_wminIRT$bout_length <- 1/meta_params_wminIRT$exp_total_L
+meta_params_wminIRT$bout_durations <- meta_params_wminIRT$bout_length*meta_params_wminIRT$w
+
+ggplot() + 
+  geom_boxplot(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=w*60))
+
+ggplot() + 
+  geom_boxplot(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=b*60))
+
+ggplot() + 
+  geom_boxplot(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=bout_length)) + 
+  ylim(0,10)
+
+ggplot() + 
+  geom_boxplot(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=bout_durations)) + 
+  ylim(0,15)
+
+#write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp2_subject_mean_params.csv"))
+```
+
+```{r}
+
+#estimates on the linear scale
+
+mcmc_draws_df <- as.data.frame(mcmc_draws)
+mcmc_draws_df$exp_shortB <- 1/(exp(mcmc_draws_df$beta_short_mu)+mean(min_collect$min_collect))
+mcmc_draws_df$exp_longB <- 1/(exp(mcmc_draws_df$beta_short_mu)+exp(mcmc_draws_df$delta_long_mu)+mean(min_collect$min_collect))
+mcmc_draws_df$exp_pB <- 1/(exp(mcmc_draws_df$L_mu)/(1+exp(mcmc_draws_df$L_mu)))
+mcmc_draws_df$Blength_B <- mcmc_draws_df$exp_pB*mcmc_draws_df$exp_shortB
+mcmc_draws_df$exp_shortC <- 1/(exp(mcmc_draws_df$beta_short_mu+mcmc_draws_df$`betas_beta_short[1]`)+mean(min_collect$min_collect))
+mcmc_draws_df$exp_longC <- 1/(exp(mcmc_draws_df$beta_short_mu+mcmc_draws_df$`betas_beta_short[1]`)+
+                                exp(mcmc_draws_df$delta_long_mu+mcmc_draws_df$`betas_delta_long[1]`)+mean(min_collect$min_collect))
+mcmc_draws_df$exp_pC <- 1/(exp(mcmc_draws_df$L_mu+mcmc_draws_df$`betas_L[1]`)/(1+exp(mcmc_draws_df$L_mu+mcmc_draws_df$`betas_L[1]`)))
+mcmc_draws_df$Blength_C <- mcmc_draws_df$exp_pC*mcmc_draws_df$exp_shortC
+
+
+
+within_bout_rate <- pivot_longer(mcmc_draws_df[,c("exp_shortB","exp_shortC")],cols=c(1:2))
+colnames(within_bout_rate)<-c("Condition","Within_Bout_Rate")
+within_bout_rate$Condition<-as.factor(within_bout_rate$Condition)
+within_bout_rate$Within_Bout_Rate <- as.numeric(within_bout_rate$Within_Bout_Rate)
+
+bout_initiation_rate <- pivot_longer(mcmc_draws_df[,c("exp_longB","exp_longC")],cols=c(1:2))
+colnames(bout_initiation_rate)<-c("Condition","Bout_Initiation_Rate")
+bout_initiation_rate$Condition<-as.factor(bout_initiation_rate$Condition)
+bout_initiation_rate$Bout_Initiation_Rate <- as.numeric(bout_initiation_rate$Bout_Initiation_Rate)
+
+bout_length <- pivot_longer(mcmc_draws_df[,c("exp_pB","exp_pC")],cols=c(1:2))
+colnames(bout_length)<-c("Condition","Bout_Length")
+bout_length$Condition<-as.factor(bout_length$Condition)
+bout_length$Bout_Length <- as.numeric(bout_length$Bout_Length)
+
+bout_duration <- pivot_longer(mcmc_draws_df[,c("Blength_B","Blength_C")],cols=c(1:2))
+colnames(bout_duration)<-c("Condition","Bout_Duration")
+bout_duration$Condition<-as.factor(bout_duration$Condition)
+bout_duration$Bout_Duration <- as.numeric(bout_duration$Bout_Duration)
+
+#session difference in unpaired
+within_bout_plot <- ggplot() +
+  geom_boxplot(data=within_bout_rate,
+              aes(x=Condition,y=Within_Bout_Rate*60),outlier.shape=NA) + 
+  ylim(0,150)+
+  ylab("Within-Bout Responses/minute") 
+
+
+
+bout_initiation_plot <- ggplot() +
+  geom_boxplot(data=bout_initiation_rate,
+              aes(x=Condition,y=Bout_Initiation_Rate*60),outlier.shape=NA) + 
+  ylim(0,10)+
+  ylab("Bouts Initiated/minute")
+
+bout_length_plot <- ggplot() +
+  geom_boxplot(data=bout_length,
+              aes(x=Condition,y=Bout_Length),outlier.shape=NA) + 
+  ylim(0,10)+
+  ylab("Bout Length (response count)")
+
+bout_duration_plot <- ggplot() +
+  geom_boxplot(data=bout_duration,
+              aes(x=Condition,y=Bout_Duration),outlier.shape=NA) + 
+  ylim(0,12)+
+  ylab("Bout Duration (s)")
+
+within_bout_plot  
+bout_initiation_plot
+bout_length_plot
+bout_duration_plot
+```
+
+
+
+
+
+
+

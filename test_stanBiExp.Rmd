@@ -164,6 +164,8 @@ mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
 
 ```{r}
 
+## mcmc
+
 fit <- mod$sample(data=data_list,
                   seed=123,
                   chains=1,
@@ -172,6 +174,23 @@ fit <- mod$sample(data=data_list,
                   num_warmup=500,
                   adapt_delta=0.99,
                   max_treedepth=30)
+
+
+```
+```{r}
+fit <- mod$variational(data=data_list,
+                  seed=123,
+                  iter=100000,
+                  grad_samples =100,
+                  elbo_samples=1000,
+                  eta=1,
+                  refresh=1,
+                  algorithm = "meanfield",
+                  adapt_engaged = TRUE,
+                  adapt_iter = 500,
+                  tol_rel_obj = 0.0001,
+                  eval_elbo = 1000,
+                  output_samples=4000)
 
 
 ```
