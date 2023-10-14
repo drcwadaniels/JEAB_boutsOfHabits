@@ -108,7 +108,7 @@ data {
  vector<lower=0>[Nr] cens_threshold; //threshold for censored data
  int s[Nr]; //subject stream
  int C[Nr]; //censor stream
- matrix[Nr,Np] P; //predictor matrix
+ int<lower=1,upper=Np+1> P[Nr]; //predictor stream
 
 
 }
@@ -128,7 +128,9 @@ vector[Ns] short_rme;
 vector[Ns] long_rme;
 vector[Ns] L_rme;
 
-
+vector[Ns] sess_short_rme;
+vector[Ns] sess_long_rme;
+vector[Ns] sess_L_rme;
 
 
 }
@@ -148,16 +150,27 @@ vector<lower=0,upper=1>[Nr] Q;
 
 for (i in 1:Nr)
 {
-  beta_short_temp[i] = short_rme[s[i]];
-  delta_long_temp[i] = long_rme[s[i]];
-  L_temp[i] = L_rme[s[i]]; 
+  if (P[i]==1)
+  {
+  //session = 0
+    beta_short_temp[i] = (beta_short_mu + short_rme[s[i]]);
+    delta_long_temp[i] = (delta_long_mu + long_rme[s[i]]);
+    L_temp[i] = (L_mu + L_rme[s[i]]);    
+  }
+  else if (P[i]==2)
+  {
+  //session = 0, condition*session = 0
+    beta_short_temp[i] = (beta_short_mu + short_rme[s[i]]) + 1*(betas_beta_short[P[i]-1]+sess_short_rme[s[i]]);
+    delta_long_temp[i] = (delta_long_mu + long_rme[s[i]]) + 1*(betas_delta_long[P[i]-1]+sess_long_rme[s[i]]);
+    L_temp[i] = (L_mu + L_rme[s[i]]) +  1*(betas_L[P[i]-1]+sess_L_rme[s[i]]);   
+  }
   
   
 }
 
-  beta_short = exp(beta_short_mu+(P*betas_beta_short)+beta_short_temp); 
-  delta_long = exp(delta_long_mu+(P*betas_delta_long)+delta_long_temp);
-  L = exp(L_mu+(P*betas_L)+L_temp);
+  beta_short = exp(beta_short_temp); 
+  delta_long = exp(delta_long_temp);
+  L = exp(L_temp);
   
   beta_long = beta_short + delta_long; 
   Q = L./(1+L);
@@ -182,6 +195,11 @@ target+= normal_lpdf(betas_L|0,3);
 target+= normal_lpdf(short_rme|0,2);
 target+= normal_lpdf(long_rme|0,2);
 target+= normal_lpdf(L_rme|0,2); 
+
+//subject specific shift from mean session slope
+target+= normal_lpdf(sess_short_rme|0,2);
+target+= normal_lpdf(sess_long_rme|0,2);
+target+= normal_lpdf(sess_L_rme|0,2); 
 
 
 //likelihood
@@ -208,12 +226,12 @@ for (i in 1:Nr)
 
 write_stan_file(biexp_stan,
                 dir=data.path,
-                basename="biexp_stan",
+                basename="biexp_stan_Exp3",
                 force_overwrite = TRUE)
 
 #compile model
 mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
-                                                "biexp_stan.stan")))
+                                                "biexp_stan_Exp3.stan")))
 
 
 ```
@@ -223,6 +241,8 @@ mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
 pred_matrix <- model.matrix(IRT~-1+reCode_Session,
                              data=tbt_matrices)
 
+alt_preds <- rep(1,nrow(pred_matrix))
+alt_preds[pred_matrix[,1]==1]<-2
 
 data_list <- list(Nr = nrow(tbt_matrices),
                   Ns = length(unique(tbt_matrices$reCode_Subject)),
@@ -231,9 +251,7 @@ data_list <- list(Nr = nrow(tbt_matrices),
                   y=tbt_matrices$IRT,
                   s=tbt_matrices$reCode_Subject, 
                   C = tbt_matrices$SessionCutOFF,
-                  P=pred_matrix)
-
-
+                  P=alt_preds)
 
 
 ```
@@ -273,7 +291,7 @@ load(paste0(data.path,"Exp3_Fit\\Exp3.RData"))
 #get mean estimate for each individual
 
 fixed_effects <- a[c(2:7),c("variable","mean")]
-random_effects <- a[c(8:43),c("variable","mean")]
+random_effects <- a[c(8:79),c("variable","mean")]
 
 #altapproach
 #short biexp
@@ -290,7 +308,13 @@ for (ea_subj in unique(predictions$reCode_Subject))
   predictions$short_rme[predictions$reCode_Subject==ea_subj] <- as.numeric(random_effects$mean[random_effects$variable==paste0("short_rme[",as.character(ea_subj),"]")])
 }
 
-predictions$total_short <- rowSums(predictions[,3:5])
+predictions$sess_short_rme <- 0
+for (ea_subj in unique(predictions$reCode_Subject))
+{
+  predictions$sess_short_rme[which(predictions$reCode_Subject==ea_subj & predictions$reCode_Session==1)] <- as.numeric(random_effects$mean[random_effects$variable==paste0("sess_short_rme[",as.character(ea_subj),"]")])
+}
+
+predictions$total_short <- rowSums(predictions[,3:6])
 predictions$exp_total_short <- exp(predictions$total_short)
 
 #longbiexp
@@ -305,7 +329,13 @@ for (ea_subj in unique(predictions$reCode_Subject))
   predictions$long_rme[predictions$reCode_Subject==ea_subj] <- as.numeric(random_effects$mean[random_effects$variable==paste0("long_rme[",as.character(ea_subj),"]")])
 }
 
-predictions$total_long <- rowSums(predictions[,8:10])
+predictions$sess_long_rme <- 0
+for (ea_subj in unique(predictions$reCode_Subject))
+{
+  predictions$sess_long_rme[which(predictions$reCode_Subject==ea_subj & predictions$reCode_Session==1)] <- as.numeric(random_effects$mean[random_effects$variable==paste0("sess_long_rme[",as.character(ea_subj),"]")])
+}
+
+predictions$total_long <- rowSums(predictions[,9:12])
 predictions$exp_total_long <- exp(predictions$total_long) + predictions$exp_total_short
 
 ##q of biexp
@@ -320,7 +350,13 @@ for (ea_subj in unique(predictions$reCode_Subject))
   predictions$L_rme[predictions$reCode_Subject==ea_subj] <- as.numeric(random_effects$mean[random_effects$variable==paste0("L_rme[",as.character(ea_subj),"]")])
 }
 
-predictions$total_L <- rowSums(predictions[,13:15])
+predictions$sess_L_rme <- 0
+for (ea_subj in unique(predictions$reCode_Subject))
+{
+  predictions$sess_L_rme[which(predictions$reCode_Subject==ea_subj & predictions$reCode_Session==1)] <- as.numeric(random_effects$mean[random_effects$variable==paste0("sess_L_rme[",as.character(ea_subj),"]")])
+}
+
+predictions$total_L <- rowSums(predictions[,15:18])
 predictions$exp_total_L <- exp(predictions$total_L) / (1+exp(predictions$total_L))
 
 
@@ -418,6 +454,10 @@ ggplot() +
 
 ```{r}
 
+summary_mean$reCode_Session<-as.character(summary_mean$reCode_Session)
+summary_mean$reCode_Session[summary_mean$reCode_Session==0] <-"TestB:HabitContext"
+summary_mean$reCode_Session[summary_mean$reCode_Session==1] <-"TestC:NeutralContext"
+
 ggplot() + 
   geom_point(data=summary_mean[summary_mean$reCode_Condition==0,], 
              aes(x=IRT_mean,y=log10(quantiles),color=as.factor(reCode_Session))) + 
@@ -428,6 +468,7 @@ ggplot() +
   ylab("Log Probability IRT > t") + 
   xlab("Elapsed time, t (s)") + 
   ggtitle("Mean BERM Fit") 
+
 
 
 write.csv(summary_mean, file = paste0(data.path,"Exp3_logsurvivordata.csv"))
@@ -496,6 +537,8 @@ ggplot() +
 
 ```{r}
 
+
+
 #estimates on the linear scale
 meta_params_wminIRT <- merge(meta_params,
                              min_collect[,c("reCode_Subject","min_collect")],
@@ -506,6 +549,10 @@ meta_params_wminIRT$b <- 1/meta_params_wminIRT$exp_total_long
 meta_params_wminIRT$w <- 1/meta_params_wminIRT$exp_total_short
 meta_params_wminIRT$bout_length <- 1/meta_params_wminIRT$exp_total_L
 meta_params_wminIRT$bout_durations <- meta_params_wminIRT$bout_length*meta_params_wminIRT$w
+
+meta_params_wminIRT$reCode_Session<-as.character(meta_params_wminIRT$reCode_Session)
+meta_params_wminIRT$reCode_Session[meta_params_wminIRT$reCode_Session==0] <-"TestB:HabitContext"
+meta_params_wminIRT$reCode_Session[meta_params_wminIRT$reCode_Session==1] <-"TestC:NeutralContext"
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
@@ -523,6 +570,8 @@ ggplot() +
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
                aes(x=as.factor(reCode_Session),y=bout_durations))
+
+
 
 
 write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp3_subject_mean_params.csv"))

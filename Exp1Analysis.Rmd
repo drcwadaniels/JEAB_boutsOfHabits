@@ -240,12 +240,12 @@ for (i in 1:Nr)
 
 write_stan_file(biexp_stan,
                 dir=data.path,
-                basename="biexp_stan",
+                basename="biexp_stan_Exp1.stan",
                 force_overwrite = TRUE)
 
 #compile model
 mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
-                                                "biexp_stan.stan")))
+                                                "biexp_stan_Exp1.stan")))
 
 
 ```
@@ -490,12 +490,20 @@ ggplot() +
              aes(x=IRT_mean,y=log10(quantiles),color=as.factor(reCode_Condition))) + 
   geom_line(data=summary_mean,
             aes(x=IRT_mean,y=log10(Mean_Fit),group=as.factor(reCode_Condition),color=as.factor(reCode_Condition)),size=1)+
-  xlim(0,20) + 
-  ylim(-1, 0) + 
+  xlim(0,30) + 
+  ylim(-2, 0) + 
   ylab("Log Probability IRT > t") + 
   xlab("Elapsed time, t (s)") + 
   facet_wrap(~reCode_Session)+
   ggtitle("Mean BERM Fit") 
+
+summary_mean$reCode_Condition <- as.character(summary_mean$reCode_Condition)
+summary_mean$reCode_Session <- as.character(summary_mean$reCode_Session)
+summary_mean$reCode_Condition[summary_mean$reCode_Condition=="0"] <-"Brief"
+summary_mean$reCode_Condition[summary_mean$reCode_Condition=="1"] <- "Extended"
+summary_mean$reCode_Session[summary_mean$reCode_Session=="0"] <-"ContextA"
+summary_mean$reCode_Session[summary_mean$reCode_Session=="1"] <- "ContextB"
+
 
 write.csv(summary_mean, file = paste0(data.path,"Exp1_logsurvivordata.csv"))
 
@@ -612,6 +620,17 @@ meta_params_wminIRT$b <- 1/meta_params_wminIRT$exp_total_long
 meta_params_wminIRT$w <- 1/meta_params_wminIRT$exp_total_short
 meta_params_wminIRT$bout_length <- 1/meta_params_wminIRT$exp_total_L
 meta_params_wminIRT$bout_durations <- meta_params_wminIRT$bout_length*meta_params_wminIRT$w
+
+
+
+
+meta_params_wminIRT$reCode_Condition <- as.character(meta_params_wminIRT$reCode_Condition)
+meta_params_wminIRT$reCode_Session <- as.character(meta_params_wminIRT$reCode_Session)
+meta_params_wminIRT$reCode_Condition[meta_params_wminIRT$reCode_Condition=="0"] <-"Brief"
+meta_params_wminIRT$reCode_Condition[meta_params_wminIRT$reCode_Condition=="1"] <- "Extended"
+meta_params_wminIRT$reCode_Session[meta_params_wminIRT$reCode_Session=="0"] <-"ContextA"
+meta_params_wminIRT$reCode_Session[meta_params_wminIRT$reCode_Session=="1"] <- "ContextB"
+
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 

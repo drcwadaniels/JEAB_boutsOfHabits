@@ -213,12 +213,12 @@ for (i in 1:Nr)
 
 write_stan_file(biexp_stan,
                 dir=data.path,
-                basename="biexp_stan",
+                basename="biexp_stan_Exp2",
                 force_overwrite = TRUE)
 
 #compile model
 mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
-                                                "biexp_stan.stan")))
+                                                "biexp_stan_Exp2.stan")))
 
 
 ```
@@ -424,11 +424,17 @@ ggplot() +
             aes(x=IRT_mean,y=log10(Mean_Fit),group=as.factor(reCode_Condition),color=as.factor(reCode_Condition)),size=1)+
   xlim(0,30) + 
   ylim(-1, 0) + 
-  ylab("Log Probability IRT > t") + 
+  ylab("Log10 Probability IRT > t") + 
   xlab("Elapsed time, t (s)") + 
   ggtitle("Mean BERM Fit") 
 
-#write.csv(summary_mean, file = paste0(data.path,"Exp2_logsurvivordata.csv"))
+
+summary_mean$reCode_Condition <- as.character(summary_mean$reCode_Condition)
+summary_mean$reCode_Session <- as.character(summary_mean$reCode_Session)
+summary_mean$reCode_Condition[summary_mean$reCode_Condition=="0"] <-"NotPrefed"
+summary_mean$reCode_Condition[summary_mean$reCode_Condition=="1"] <- "Prefed"
+
+write.csv(summary_mean, file = paste0(data.path,"Exp2_logsurvivordata.csv"))
 
 
 ```
@@ -529,7 +535,13 @@ ggplot() +
                aes(x=as.factor(reCode_Condition),y=bout_durations)) + 
   ylim(0,15)
 
-#write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp2_subject_mean_params.csv"))
+
+meta_params_wminIRT$reCode_Condition <- as.character(meta_params_wminIRT$reCode_Condition)
+meta_params_wminIRT$reCode_Condition[meta_params_wminIRT$reCode_Condition=="0"]<-"NotPrefed"
+meta_params_wminIRT$reCode_Condition[meta_params_wminIRT$reCode_Condition=="1"]<-"Prefed"
+
+
+write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp2_subject_mean_params.csv"))
 ```
 
 ```{r}
