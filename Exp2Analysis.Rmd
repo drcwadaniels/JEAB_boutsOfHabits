@@ -19,8 +19,6 @@ library(bayesplot)
 
 ```
 
-# 1. Temporal Bisection
-
 
 ```{r}
 
@@ -515,7 +513,7 @@ meta_params_wminIRT$exp_total_long <- meta_params_wminIRT$exp_total_long + meta_
 meta_params_wminIRT$b <- 1/meta_params_wminIRT$exp_total_long
 meta_params_wminIRT$w <- 1/meta_params_wminIRT$exp_total_short
 meta_params_wminIRT$bout_length <- 1/meta_params_wminIRT$exp_total_L
-meta_params_wminIRT$bout_durations <- meta_params_wminIRT$bout_length*meta_params_wminIRT$w
+meta_params_wminIRT$bout_durations <- meta_params_wminIRT$bout_length*meta_params_wminIRT$exp_total_short
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
