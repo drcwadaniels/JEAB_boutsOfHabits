@@ -15,7 +15,10 @@ library(shinystan)
 library(cmdstanr)
 library(posterior)
 library(bayesplot)
-
+library(ggridges)
+library(patchwork)
+library(ggtext)
+library(ggprism)
 
 ```
 
@@ -437,66 +440,38 @@ write.csv(summary_mean, file = paste0(data.path,"Exp2_logsurvivordata.csv"))
 
 ```
 
-```{r}
+```{r, fig.height = 4, fig.width = 4}
 
 mcmc_draws <- fit$draws(variables=c("beta_short_mu","delta_long_mu","L_mu",
                                     "betas_beta_short[1]", 
                                     "betas_delta_long[1]",
                                     "betas_L[1]"), 
-                        format = "matrix")
+                        format = "df")
 
 
 #session difference in unpaired
-plot_title <- ggtitle("Posterior Distributions of Difference Between Tests Habit & Pre-Feeding") 
-mcmc_areas(mcmc_draws, pars=c("betas_beta_short[1]", "betas_delta_long[1]", 
-                               "betas_L[1]"), 
-           point_est = "mean", 
-           prob=0.68, 
-           prob_outer = 0.95) + plot_title + vline_0() + 
-  scale_y_discrete(labels=c("betas_beta_short[1]"="w", 
-                            "betas_delta_long[1]"="b",
-                            "betas_L[1]" = "L")) + 
-  xlab("Differences on Log Scale") + 
-  ylab("BERM Parameter")
+mcmc_draws_long <- pivot_longer(mcmc_draws,cols=c(1:6))
 
+beta1_plot <- ggplot(mcmc_draws_long[which(grepl("betas",mcmc_draws_long$name) &
+                                             grepl("[1]",mcmc_draws_long$name)),],
+                     aes(x=value,y=name)) + 
+  stat_density_ridges(quantile_lines=TRUE, 
+                      quantiles=c(0.05,0.5,0.95), 
+                      scale=0.9, 
+                      rel_min_height=0.01) + 
+  geom_vline(xintercept=0,linetype="dashed") + 
+  theme_bw(base_size=12) + 
+  xlab("Posterior Differences Estimate") + 
+  ylab("Parameter") + 
+  scale_y_discrete(labels=c("betas_L[1]"="*H*",
+                            "betas_delta_long[1]"="*b-bar*",
+                            "betas_beta_short[1]"= "*w-bar*")) + 
+  ggtitle("Feeding Group Effect")+ 
+  theme(axis.text.y=ggtext::element_markdown()) + 
+  xlim(-4,4)
 
-#posteriors for bout length and bout duration
-
-
-bout_lengthHab <- 1/(exp(mcmc_draws[,3])/(exp(mcmc_draws[,3])+1))
-bout_lengthPF <- 1/(exp(mcmc_draws[,3]+mcmc_draws[,6])/(exp(mcmc_draws[,3]+mcmc_draws[,6])+1))
-bout_length_diff <- log(bout_lengthPF+1) - log(bout_lengthHab+1)
-
-bout_durationHab <- bout_lengthHab * (1/(exp(mcmc_draws[,1])))
-bout_durationPF <- bout_lengthPF * (1/(exp(mcmc_draws[,1]+mcmc_draws[,4])))
-bout_duration_diff <- log(bout_durationPF+1)- log(bout_durationHab-1)
-
-calc_posteriors <- as.data.frame(cbind(bout_lengthHab, bout_lengthPF, bout_length_diff, bout_durationHab, bout_durationPF, bout_duration_diff))
-colnames(calc_posteriors)<-c("Bout_LengthHab", "Bout_LengthPF", "Bout_LengthDiff", "Bout_DurationHab","Bout_DurationPF","Bout_DurationDiff")
-
-# ggplot() + 
-#   geom_density(data=calc_posteriors, aes(Bout_LengthHab), color = "blue", fill = "blue", alpha  = 0.5) + 
-#   geom_density(data=calc_posteriors, aes(Bout_LengthPF), color = "orange", fill = "orange", alpha = 0.5) + 
-#   xlim(0,10) + 
-#   ggtitle("Bout Length")
-
-ggplot() + 
-  geom_density(data=calc_posteriors, aes(bout_length_diff), color = "blue", fill = "blue", alpha  = 0.5) + 
-  geom_vline(data=calc_posteriors, aes(xintercept = 0 ))+
-  xlim(-2.5,2.5) + 
-  ggtitle("Bout Length PF - Hab")
-
-# ggplot() + 
-#   geom_density(data=calc_posteriors, aes(Bout_DurationHab), color = "blue", fill = "blue", alpha  = 0.5) + 
-#   geom_density(data=calc_posteriors, aes(Bout_DurationPF), color = "orange", fill = "orange", alpha = 0.5) + 
-#   xlim(0,30) + 
-#   ggtitle("Bout Duration")
-
-ggplot() + 
-  geom_density(data=calc_posteriors, aes(Bout_DurationDiff), color = "blue", fill = "blue", alpha  = 0.5) + 
-  geom_vline(data=calc_posteriors, aes(xintercept = 0 ))+
-  xlim(-5,5) + 
-  ggtitle("Bout Duration PF - Hab")
+beta1_plot
+ggsave(paste0(data.path,"Exp2.tiff"),dpi=1000)
 
 ```
 
@@ -517,22 +492,32 @@ meta_params_wminIRT$bout_durations <- meta_params_wminIRT$bout_length*meta_param
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
-               aes(x=as.factor(reCode_Condition),y=w*60))
+               aes(x=as.factor(reCode_Condition),y=w*60))+ 
+  geom_point(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=w*60), 
+             position=position_dodge2(width=0.75))  
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
-               aes(x=as.factor(reCode_Condition),y=b*60))
+               aes(x=as.factor(reCode_Condition),y=b*60))+ 
+  geom_point(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=b*60), 
+             position=position_dodge2(width=0.75))  
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
-               aes(x=as.factor(reCode_Condition),y=bout_length)) + 
+               aes(x=as.factor(reCode_Condition),y=bout_length))+ 
+  geom_point(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=bout_length), 
+             position=position_dodge2(width=0.75))   + 
   ylim(0,10)
 
 ggplot() + 
   geom_boxplot(data=meta_params_wminIRT, 
                aes(x=as.factor(reCode_Condition),y=bout_durations)) + 
-  ylim(0,15)
-
+  geom_point(data=meta_params_wminIRT, 
+               aes(x=as.factor(reCode_Condition),y=bout_durations), 
+             position=position_dodge2(width=0.75))  
 
 meta_params_wminIRT$reCode_Condition <- as.character(meta_params_wminIRT$reCode_Condition)
 meta_params_wminIRT$reCode_Condition[meta_params_wminIRT$reCode_Condition=="0"]<-"NotPrefed"
@@ -542,75 +527,6 @@ meta_params_wminIRT$reCode_Condition[meta_params_wminIRT$reCode_Condition=="1"]<
 write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp2_subject_mean_params.csv"))
 ```
 
-```{r}
-
-#estimates on the linear scale
-
-mcmc_draws_df <- as.data.frame(mcmc_draws)
-mcmc_draws_df$exp_shortB <- 1/(exp(mcmc_draws_df$beta_short_mu)+mean(min_collect$min_collect))
-mcmc_draws_df$exp_longB <- 1/(exp(mcmc_draws_df$beta_short_mu)+exp(mcmc_draws_df$delta_long_mu)+mean(min_collect$min_collect))
-mcmc_draws_df$exp_pB <- 1/(exp(mcmc_draws_df$L_mu)/(1+exp(mcmc_draws_df$L_mu)))
-mcmc_draws_df$Blength_B <- mcmc_draws_df$exp_pB*mcmc_draws_df$exp_shortB
-mcmc_draws_df$exp_shortC <- 1/(exp(mcmc_draws_df$beta_short_mu+mcmc_draws_df$`betas_beta_short[1]`)+mean(min_collect$min_collect))
-mcmc_draws_df$exp_longC <- 1/(exp(mcmc_draws_df$beta_short_mu+mcmc_draws_df$`betas_beta_short[1]`)+
-                                exp(mcmc_draws_df$delta_long_mu+mcmc_draws_df$`betas_delta_long[1]`)+mean(min_collect$min_collect))
-mcmc_draws_df$exp_pC <- 1/(exp(mcmc_draws_df$L_mu+mcmc_draws_df$`betas_L[1]`)/(1+exp(mcmc_draws_df$L_mu+mcmc_draws_df$`betas_L[1]`)))
-mcmc_draws_df$Blength_C <- mcmc_draws_df$exp_pC*mcmc_draws_df$exp_shortC
-
-
-
-within_bout_rate <- pivot_longer(mcmc_draws_df[,c("exp_shortB","exp_shortC")],cols=c(1:2))
-colnames(within_bout_rate)<-c("Condition","Within_Bout_Rate")
-within_bout_rate$Condition<-as.factor(within_bout_rate$Condition)
-within_bout_rate$Within_Bout_Rate <- as.numeric(within_bout_rate$Within_Bout_Rate)
-
-bout_initiation_rate <- pivot_longer(mcmc_draws_df[,c("exp_longB","exp_longC")],cols=c(1:2))
-colnames(bout_initiation_rate)<-c("Condition","Bout_Initiation_Rate")
-bout_initiation_rate$Condition<-as.factor(bout_initiation_rate$Condition)
-bout_initiation_rate$Bout_Initiation_Rate <- as.numeric(bout_initiation_rate$Bout_Initiation_Rate)
-
-bout_length <- pivot_longer(mcmc_draws_df[,c("exp_pB","exp_pC")],cols=c(1:2))
-colnames(bout_length)<-c("Condition","Bout_Length")
-bout_length$Condition<-as.factor(bout_length$Condition)
-bout_length$Bout_Length <- as.numeric(bout_length$Bout_Length)
-
-bout_duration <- pivot_longer(mcmc_draws_df[,c("Blength_B","Blength_C")],cols=c(1:2))
-colnames(bout_duration)<-c("Condition","Bout_Duration")
-bout_duration$Condition<-as.factor(bout_duration$Condition)
-bout_duration$Bout_Duration <- as.numeric(bout_duration$Bout_Duration)
-
-#session difference in unpaired
-within_bout_plot <- ggplot() +
-  geom_boxplot(data=within_bout_rate,
-              aes(x=Condition,y=Within_Bout_Rate*60),outlier.shape=NA) + 
-  ylim(0,150)+
-  ylab("Within-Bout Responses/minute") 
-
-
-
-bout_initiation_plot <- ggplot() +
-  geom_boxplot(data=bout_initiation_rate,
-              aes(x=Condition,y=Bout_Initiation_Rate*60),outlier.shape=NA) + 
-  ylim(0,10)+
-  ylab("Bouts Initiated/minute")
-
-bout_length_plot <- ggplot() +
-  geom_boxplot(data=bout_length,
-              aes(x=Condition,y=Bout_Length),outlier.shape=NA) + 
-  ylim(0,10)+
-  ylab("Bout Length (response count)")
-
-bout_duration_plot <- ggplot() +
-  geom_boxplot(data=bout_duration,
-              aes(x=Condition,y=Bout_Duration),outlier.shape=NA) + 
-  ylim(0,12)+
-  ylab("Bout Duration (s)")
-
-within_bout_plot  
-bout_initiation_plot
-bout_length_plot
-bout_duration_plot
-```
 
 
 
