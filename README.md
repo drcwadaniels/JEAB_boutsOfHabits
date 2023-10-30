@@ -10,4 +10,5 @@ This repository contains data and code developed for fitting the BERM model to I
 5. Knitted Markdown Files serving as Supplemental Files (.html; not yet added, need to fix some aesthetic issues in the .Rmds)
 
 -For questions concerning Thrailkill & Daniels, email Eric Thrailkill at eric.thrailkill@uvm.edu
+
 -For questions concerning the modeling in particular, email Carter Daniels at carter.wa.daniels@gmail.com 
