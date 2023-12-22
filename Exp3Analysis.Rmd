@@ -5,7 +5,7 @@ date: "2023-07-23"
 output: html_document
 ---
 
-```{r}
+```{r, include=FALSE}
 rm(list=ls())
 #import libraries
 library(tidyverse)
@@ -23,7 +23,7 @@ library(ggprism)
 ```
 
 
-```{r}
+```{r, include=FALSE}
 
 #datapath and functions
 
@@ -31,7 +31,7 @@ data.path <- "D:\\Dropbox Drive Folder\\Dropbox\\2 All of Carter's Stuff\\Carter
 
 ```
 
-```{r}
+```{r, include=FALSE}
 
 
 tbt_matrices <- read.csv(paste0(data.path,"exp3_habit_jeab.csv"))[,c(1:9)]
@@ -81,7 +81,10 @@ tbt_matrices$cens_thresh[tbt_matrices$SessionCutOFF==1] <- tbt_matrices$IRT[tbt_
 
 ```
 
-```{r, fig.width = 24, fig.height = 24}
+# Individual Data (scatter plots)
+
+
+```{r, fig.width = 24, fig.height = 24, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 ggplot() + 
   geom_point(data=tbt_matrices, 
@@ -94,7 +97,7 @@ ggplot() +
 
 
 
-```{r}
+```{r, include=FALSE}
 
 biexp_stan <- "
 
@@ -237,7 +240,7 @@ mod <- cmdstan_model(stan_file=file.path(paste0(data.path,
 
 ```
 
-```{r}
+```{r, include=FALSE}
 #construct predictor matrix
 pred_matrix <- model.matrix(IRT~-1+reCode_Session,
                              data=tbt_matrices)
@@ -258,7 +261,7 @@ data_list <- list(Nr = nrow(tbt_matrices),
 ```
 
 
-```{r}
+```{r, include=FALSE}
 
 ## mcmc
 # 
@@ -288,7 +291,7 @@ load(paste0(data.path,"Exp3_Fit\\Exp3.RData"))
 
 ```
 
-```{r}
+```{r, include=FALSE}
 #get mean estimate for each individual
 
 fixed_effects <- a[c(2:7),c("variable","mean")]
@@ -367,7 +370,7 @@ tbt_matrices_wfit <- merge(tbt_matrices,meta_params,by=c("reCode_Subject","reCod
 
 ```
 
-```{r}
+```{r, include=FALSE}
 
 #quantiles for each animal in each group under each condition
 
@@ -415,9 +418,9 @@ summary_mean <- long_quantil_df %>% group_by(reCode_Condition,reCode_Session,qua
 colnames(summary_mean)[4:ncol(summary_mean)]<-c("IRT_mean","IRT_sd","Mean_Fit","SD_Fit")
 
 ```
+# Individual Fits of BERM (scatter plots)
 
-
-```{r, fig.width = 24, fig.height = 24}
+```{r, fig.width = 24, fig.height = 24, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 ggplot() + 
   geom_point(data=tbt_matrices_wfit, 
@@ -432,7 +435,9 @@ ggplot() +
 
 ```
 
-```{r, fig.width = 24, fig.height = 24}
+# Individual Fits of BERM (survivor-log plots)
+
+```{r, fig.width = 24, fig.height = 24, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 ggplot() + 
   geom_point(data=long_quantil_df, 
@@ -453,7 +458,9 @@ ggplot() +
 
 ```
 
-```{r}
+# Mean Fit of BERM
+
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 summary_mean$reCode_Session<-as.character(summary_mean$reCode_Session)
 summary_mean$reCode_Session[summary_mean$reCode_Session==0] <-"TestB:HabitContext"
@@ -476,7 +483,9 @@ write.csv(summary_mean, file = paste0(data.path,"Exp3_logsurvivordata.csv"))
 
 ```
 
-```{r, fig.height = 4, fig.width = 4}
+# Posterior Distributions of Fixed Effects
+
+```{r, fig.height = 4, fig.width = 4, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 mcmc_draws <- fit$draws(variables=c("beta_short_mu","delta_long_mu","L_mu",
                                     "betas_beta_short[1]", 
@@ -508,12 +517,14 @@ beta1_plot <- ggplot(mcmc_draws_long[which(grepl("betas",mcmc_draws_long$name) &
 
 
 beta1_plot
-ggsave(paste0(data.path,"Exp3.tiff"),dpi=1000)
+ggsave(paste0(data.path,"Exp3.pdf"),dpi=1200)
 
 
 ```
 
-```{r}
+# Lazy Graphing of Subject Parameter Estimates
+
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 
 
@@ -564,7 +575,7 @@ ggplot() +
 
 
 
-write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp3_subject_mean_params.csv"))
+#write.csv(meta_params_wminIRT, file = paste0(data.path,"Exp3_subject_mean_params.csv"))
 
 
 ```
