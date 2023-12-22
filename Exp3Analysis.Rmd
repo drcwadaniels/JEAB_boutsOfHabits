@@ -424,11 +424,11 @@ colnames(summary_mean)[4:ncol(summary_mean)]<-c("IRT_mean","IRT_sd","Mean_Fit","
 
 ggplot() + 
   geom_point(data=tbt_matrices_wfit, 
-             aes(x=StartTimeOfResponse,y=log(IRT),color=as.factor(reCode_Condition))) + 
+             aes(x=StartTimeOfResponse,y=log(IRT),color=as.factor(reCode_Session))) + 
   geom_line(data=tbt_matrices_wfit, 
-            aes(x=StartTimeOfResponse,y=log(exp_total_short),color=as.factor(reCode_Condition)),size=1.5,linetype="solid")+
+            aes(x=StartTimeOfResponse,y=log(exp_total_short),color=as.factor(reCode_Session)),size=1.5,linetype="solid")+
   geom_line(data=tbt_matrices_wfit, 
-            aes(x=StartTimeOfResponse,y=log(exp_total_long),color=as.factor(reCode_Condition)),size=1.5,linetype="dashed")+
+            aes(x=StartTimeOfResponse,y=log(exp_total_long),color=as.factor(reCode_Session)),size=1.5,linetype="dashed")+
   facet_wrap(~reCode_Subject+reCode_Session)
 
 
@@ -441,16 +441,16 @@ ggplot() +
 
 ggplot() + 
   geom_point(data=long_quantil_df, 
-             aes(x=log10(IRT),y=log10(quantiles),color=as.factor(reCode_Condition))) + 
+             aes(x=log10(IRT),y=log10(quantiles),color=as.factor(reCode_Session))) + 
     geom_line(data=long_quantil_df, 
-            aes(x=log10(IRT),y=log10(biexp_fit),color=as.factor(reCode_Condition)),size=1)+
+            aes(x=log10(IRT),y=log10(biexp_fit),color=as.factor(reCode_Session)),size=1)+
   facet_wrap(~reCode_Subject+reCode_Session, scales="free")
 
 ggplot() + 
   geom_point(data=long_quantil_df, 
-             aes(x=IRT,y=log10(quantiles),color=as.factor(reCode_Condition))) + 
+             aes(x=IRT,y=log10(quantiles),color=as.factor(reCode_Session))) + 
   geom_line(data=long_quantil_df, 
-            aes(x=IRT,y=log10(biexp_fit),color=as.factor(reCode_Condition)),size=1)+
+            aes(x=IRT,y=log10(biexp_fit),color=as.factor(reCode_Session)),size=1)+
   xlim(0,30)+
   facet_wrap(~reCode_Subject+reCode_Session,scales="free")
 
