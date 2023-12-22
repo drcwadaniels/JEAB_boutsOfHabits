@@ -1,5 +1,5 @@
 # JEAB_boutsOfHabits
-Biexponential Analysis of IRTs for JEAB Thrailkill &amp; Daniels Paper
+Biexponential Analysis of IRTs for JEAB [Thrailkill &amp; Daniels Paper](https://onlinelibrary.wiley.com/doi/full/10.1002/jeab.896)
 
 This repository contains data and code developed for fitting the BERM model to IRTs; specifically, it was deployed to determine whether goal-directed vs. habitual action differed in BERM parameters. 
 
